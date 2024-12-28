@@ -11,10 +11,12 @@ type WatchSelector struct {
 	// Resources is the list of resources to watch and audit. e.g (Deployment, Services)
 	Resources []string `json:"resources,omitempty"`
 }
+
 // WatchSpec defines the desired state of Watch.
 type WatchSpec struct {
 	Selectors []WatchSelector `json:"selectors"`
 }
+
 // WatchStatus defines the observed state of Watch.
 type WatchStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
