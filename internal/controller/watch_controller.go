@@ -1,3 +1,9 @@
+func HasWatchManAnnotation(a map[string]string) bool {
+	if val, ok := a[watchByAnnotation]; ok && val == "watchman" {
+		return true
+	}
+	return false
+}
 // SetupWithManager sets up the controller with the Manager.
 func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Watch Deployments with watchman annotation
