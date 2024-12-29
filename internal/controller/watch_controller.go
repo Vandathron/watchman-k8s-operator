@@ -1,3 +1,18 @@
+func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	watch := &auditv1alpha1.Watch{}
+	err := r.Get(ctx, req.NamespacedName, watch)
+
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Watch resource was not found", "Namespace", req.Namespace, "Name", req.Name)
+		return ctrl.Result{}, nil
+	} else if err != nil {
+		log.Error(err, "Fails to get resource", "Namespace", req.Namespace, "Name", req.Name)
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, r.reconcileWatchManResource(ctx, watch)
+}
 func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch) error {
 	log := log.FromContext(ctx)
 
@@ -6,24 +21,11 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 	for _, selector := range selectors {
 		ns := selector.Namespace
 		for _, kind := range selector.Kinds {
-			var objectList client.ObjectList
-			err := r.List(ctx, objectList, client.InNamespace(ns), client.MatchingFields{".kind": kind})
-			if err != nil {
-				log.Error(err, "Failed to fetch resources for kind: ", kind)
-				continue
-			}
-
-			objectKind := objectList.GetObjectKind().GroupVersionKind().Kind
-			if kind != objectKind {
-				log.Error(fmt.Errorf("resource kind mismatch"), "Resource internal kind:", kind, "does not match with retrieved kind", objectKind)
-				continue
-			}
-
-			if objectKind == "Deployment" {
-				deployments, ok := objectList.(*appsv1.DeploymentList)
-
-				if !ok {
-					log.Error(fmt.Errorf("parsing failed"), "Failed to parse object list to deployment struct")
+			if kind == "Deployment" {
+				deployments := &appsv1.DeploymentList{}
+				err := r.List(ctx, deployments, client.InNamespace(ns))
+				if err != nil {
+					log.Error(err, "Failed to fetch resource", "Kind", kind)
 					continue
 				}
 
@@ -32,9 +34,9 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 					continue
 				}
 
-				log.Info("Watching deployment resources in namespace", ns)
+				log.Info("Watching deployment resources in namespace", "Namespace", ns)
 			} else {
-				log.Error(fmt.Errorf("unsupported resource kind to watch"), "Invalid resource kind ", objectKind)
+				log.Error(fmt.Errorf("unsupported resource kind to watch"), "Invalid resource", "Kind", kind)
 			}
 		}
 	}
@@ -48,20 +50,21 @@ func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *app
 		if HasWatchManAnnotation(dep.Annotations) { // no need to update deployment with annotation as it already exists
 			continue
 		}
-		var latestDeployment *appsv1.Deployment
+		latestDeployment := &appsv1.Deployment{}
 
 		err := r.Get(ctx, types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace}, latestDeployment)
 
 		if err != nil && errors.IsNotFound(err) {
-			log.Info("Failed to get deployment. May have been deleted, Name", dep.Name, "Namespace", dep.Namespace)
+			log.Info("Failed to get deployment. May have been deleted", "Name", dep.Name, "Namespace", dep.Namespace)
 			continue
 		} else if err != nil {
-			log.Error(err, "Failed to get deployment, Name", dep.Name, "Namespace", dep.Namespace)
+			log.Error(err, "Failed to get deployment", "Name", dep.Name, "Namespace", dep.Namespace)
 			continue
 		}
 
 		dep.Annotations[watchByAnnotation] = "watchman"
 
+		// TODO: Consider patching
 		err = r.Update(ctx, &dep, &client.UpdateOptions{
 			FieldManager: "watch-man-controller",
 		})
