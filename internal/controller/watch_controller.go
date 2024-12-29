@@ -1,3 +1,36 @@
+func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) error {
+	log := log.FromContext(ctx)
+
+	for _, dep := range deployments.Items {
+		if HasWatchManAnnotation(dep.Annotations) { // no need to update deployment with annotation as it already exists
+			continue
+		}
+		var latestDeployment *appsv1.Deployment
+
+		err := r.Get(ctx, types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace}, latestDeployment)
+
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Failed to get deployment. May have been deleted, Name", dep.Name, "Namespace", dep.Namespace)
+			continue
+		} else if err != nil {
+			log.Error(err, "Failed to get deployment, Name", dep.Name, "Namespace", dep.Namespace)
+			continue
+		}
+
+		dep.Annotations[watchByAnnotation] = "watchman"
+
+		err = r.Update(ctx, &dep, &client.UpdateOptions{
+			FieldManager: "watch-man-controller",
+		})
+
+		if err != nil {
+			log.Error(err, "Failed to update deployment resource")
+			continue
+		}
+	}
+
+	return nil
+}
 func HasWatchManAnnotation(a map[string]string) bool {
 	if val, ok := a[watchByAnnotation]; ok && val == "watchman" {
 		return true
