@@ -43,36 +43,42 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 
 	return nil
 }
+
 func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) error {
-	log := log.FromContext(ctx)
 
 	for _, dep := range deployments.Items {
-		if HasWatchManAnnotation(dep.Annotations) { // no need to update deployment with annotation as it already exists
-			continue
-		}
-		latestDeployment := &appsv1.Deployment{}
+		_ = r.watchDeployment(ctx, &dep)
+	}
 
-		err := r.Get(ctx, types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace}, latestDeployment)
+	return nil
+}
 
-		if err != nil && errors.IsNotFound(err) {
-			log.Info("Failed to get deployment. May have been deleted", "Name", dep.Name, "Namespace", dep.Namespace)
-			continue
-		} else if err != nil {
-			log.Error(err, "Failed to get deployment", "Name", dep.Name, "Namespace", dep.Namespace)
-			continue
-		}
+func (r *WatchReconciler) watchDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
+	log := log.FromContext(ctx)
 
-		dep.Annotations[watchByAnnotation] = "watchman"
+	if HasWatchManAnnotation(deployment.Annotations) { // no need to update deployment with annotation as it already exists
+		return nil
+	}
 
-		// TODO: Consider patching
-		err = r.Update(ctx, &dep, &client.UpdateOptions{
-			FieldManager: "watch-man-controller",
-		})
+	latestDeployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment)
 
-		if err != nil {
-			log.Error(err, "Failed to update deployment resource")
-			continue
-		}
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Failed to get deployment. May have been deleted", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return nil // no need to error. Resource may have been deleted
+	} else if err != nil {
+		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return err
+	}
+
+	latestDeployment.Annotations[watchByAnnotation] = "watchman"
+
+	// TODO: Consider patching
+	if err = r.Update(ctx, latestDeployment, &client.UpdateOptions{
+		FieldManager: "watch-man-controller",
+	}); err != nil {
+		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return err
 	}
 
 	return nil
