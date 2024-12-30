@@ -77,6 +77,43 @@ func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *app
 
 	return nil
 }
+
+func (r *WatchReconciler) watchServices(ctx context.Context, services *v1.ServiceList) error {
+
+	for _, svc := range services.Items {
+		_ = r.watchService(ctx, &svc)
+	}
+
+	return nil
+}
+
+func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) interface{} {
+	log := log.FromContext(ctx)
+	latestSvc := &v1.Service{}
+	if HasWatchManAnnotation(s.Annotations) {
+		return nil // no need to continue
+	}
+
+	if err := r.Get(ctx, types.NamespacedName{Namespace: s.Namespace, Name: s.Name}, latestSvc); err != nil && errors.IsNotFound(err) {
+		log.Info("Failed to get service. May have been deleted", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+		return nil
+	} else if err != nil {
+		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+		return err
+	}
+
+	latestSvc.Annotations[watchByAnnotation] = "watchman"
+
+	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
+		FieldManager: "watch-man-controller",
+	}); err != nil {
+		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+		return err
+	}
+
+	return nil
+}
+
 func HasWatchManAnnotation(a map[string]string) bool {
 	if val, ok := a[watchByAnnotation]; ok && val == "watchman" {
 		return true
