@@ -126,23 +126,29 @@ func HasWatchManAnnotation(a map[string]string) bool {
 	}
 	return false
 }
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Watch Deployments with watchman annotation
-	deployPredicate := predicate.Funcs{
-		CreateFunc: func(e event.TypedCreateEvent[client.Object]) bool {
-			if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
-				return true
-			}
-			return false
-		},
 
-		DeleteFunc: func(e event.TypedDeleteEvent[client.Object]) bool {
-			if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
-				return true
-			}
-			return false
-		},
+	createFunc := func(e event.TypedCreateEvent[client.Object]) bool {
+		if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
+			return true
+		}
+		return false
+	}
+
+	deleteFunc := func(e event.TypedDeleteEvent[client.Object]) bool {
+		if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
+			return true
+		}
+		return false
+	}
+
+	deployPredicate := predicate.Funcs{
+		CreateFunc: createFunc,
+
+		DeleteFunc: deleteFunc,
 
 		UpdateFunc: func(e event.TypedUpdateEvent[client.Object]) bool {
 			val, hasAnnotation := e.ObjectOld.GetAnnotations()[watchByAnnotation]
@@ -152,9 +158,7 @@ func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 			if oldDeployment, ok := e.ObjectOld.(*appsv1.Deployment); ok {
 				newDeployment := e.ObjectNew.(*appsv1.Deployment)
-				return hasAnnotation &&
-					(reflect.DeepEqual(oldDeployment.Spec, newDeployment.Spec) == false ||
-						(reflect.DeepEqual(oldDeployment.ObjectMeta, newDeployment.ObjectMeta) == false))
+				return hasAnnotation && (reflect.DeepEqual(oldDeployment.Spec, newDeployment.Spec) == false)
 			}
 
 			return false
@@ -162,16 +166,8 @@ func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	bldr := ctrl.NewControllerManagedBy(mgr)
-	bldr.Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-		return []reconcile.Request{
-			{
-				NamespacedName: types.NamespacedName{
-					Namespace: object.GetNamespace(),
-					Name:      object.GetName(),
-				},
-			},
-		}
-	}), builder.WithPredicates(deployPredicate))
+	bldr.Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.handleDeployment), builder.WithPredicates(deployPredicate))
+	bldr.Watches(&v1.Service{}, handler.EnqueueRequestsFromMapFunc(r.handleService), builder.WithPredicates(deployPredicate))
 
 	return bldr.For(&auditv1alpha1.Watch{}).
 		Named("watch").
