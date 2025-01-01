@@ -2,11 +2,73 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/utils"
+	appsv1 "k8s.io/api/apps/v1"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"strconv"
+)
+
+var (
+	oldDeployments = map[string]*appsv1.Deployment{}
 )
 
 func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Object) []reconcile.Request {
+	log := log.FromContext(ctx)
+	deployment, ok := object.(*appsv1.Deployment)
+
+	if !ok {
+		log.Error(fmt.Errorf("object not a deployment type"), "")
+		return nil
+	}
+
+	action, ok := deployment.Annotations[utils.WatchActionTypeAnnotationKey]
+	if !ok {
+		log.Error(fmt.Errorf("watch type action label not found"), "No watch type action label specified.")
+		return nil
+	}
+
+	data := &audit.Data{}
+	data.AddField("Kind", "Deployment")
+
+	switch action {
+	case utils.WatchActionTypeCreate:
+		old := &appsv1.Deployment{}
+		r.recordDeploymentDiff(ctx, old, deployment, data)
+		r.Audit.Audit("deployment", utils.WatchActionTypeCreate, deployment.Namespace, *data)
+
+	case utils.WatchActionTypeUpdate:
+		if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateOld) {
+			log.Info(" old deployment, should save temporarily")
+			oldDeployments[fmt.Sprintf("%s:%s", deployment.Namespace, deployment.Name)] = deployment.DeepCopy()
+			return nil
+		} else if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateNew) {
+			// find old deployment
+			log.Info("found new deployment, searching for pair/old")
+			var oldDeployment = oldDeployments[fmt.Sprintf("%s:%s", deployment.Namespace, deployment.Name)]
+			if oldDeployment == nil {
+				log.Error(fmt.Errorf("old deployment not found"), "Old deployment not found for new deployment", "Name", deployment.Name, "Namespace", deployment.Namespace)
+				return nil
+			}
+			r.recordDeploymentDiff(ctx, oldDeployment, deployment, data)
+			r.Audit.Audit(deployment.Name, utils.WatchActionTypeUpdate, deployment.Namespace, *data)
+		} else {
+			log.Error(fmt.Errorf("annotation not found"), fmt.Sprintf("%s not found", utils.WatchUpdateStateKey))
+			return nil
+		}
+
+	case utils.WatchActionTypeDelete:
+		r.Audit.Audit(deployment.Name, utils.WatchActionTypeDelete, deployment.Namespace, *data)
+
+	default:
+		log.Error(fmt.Errorf("invalid action type"), "Unsupported action type", "Type", action)
+	}
+
 	return nil
 }
 
@@ -40,8 +102,8 @@ func (r *WatchReconciler) recordDeploymentDiff(ctx context.Context, old, new *ap
 	}
 }
 
-func (r *WatchReconciler) filterDeployment(e event.TypedUpdateEvent[client.Object]) bool {
-	if !HasWatchManAnnotation(e.ObjectOld.GetAnnotations(), utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+func (r *WatchReconciler) filterDeployments(e event.TypedUpdateEvent[client.Object]) bool {
+	if !utils.HasWatchManAnnotation(e.ObjectOld.GetAnnotations(), utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
 		return false
 	}
 
