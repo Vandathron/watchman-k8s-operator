@@ -10,7 +10,7 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 	return nil
 }
 
-func (r *WatchReconciler) diff(ctx context.Context, old, new *appsv1.Deployment, data *audit.Data) {
+func (r *WatchReconciler) recordDeploymentDiff(ctx context.Context, old, new *appsv1.Deployment, data *audit.Data) {
 	// Compare replicas
 	log := log.FromContext(ctx)
 	if old.Spec.Replicas != new.Spec.Replicas {
@@ -38,4 +38,23 @@ func (r *WatchReconciler) diff(ctx context.Context, old, new *appsv1.Deployment,
 	if err := utils.RecordChanges(old.Spec.Template.Spec, new.Spec.Template.Spec, "spec.template.spec.", data); err != nil {
 		log.Error(err, "record change error")
 	}
+}
+
+func (r *WatchReconciler) filterDeployment(e event.TypedUpdateEvent[client.Object]) bool {
+	if !HasWatchManAnnotation(e.ObjectOld.GetAnnotations(), utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+		return false
+	}
+
+	if oldDeployment, ok := e.ObjectOld.(*appsv1.Deployment); ok {
+		newDeployment := e.ObjectNew.(*appsv1.Deployment)
+		oldDeployment.Annotations[utils.WatchUpdateStateKey] = utils.WatchUpdateStateOld
+		oldDeployment.Annotations[utils.WatchActionTypeAnnotationKey] = utils.WatchActionTypeUpdate
+
+		newDeployment.Annotations[utils.WatchActionTypeAnnotationKey] = utils.WatchActionTypeUpdate
+		newDeployment.Annotations[utils.WatchUpdateStateKey] = utils.WatchUpdateStateNew
+
+		return reflect.DeepEqual(oldDeployment.Spec, newDeployment.Spec) == false
+	}
+
+	return false
 }

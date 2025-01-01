@@ -150,19 +150,7 @@ func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 		DeleteFunc: deleteFunc,
 
-		UpdateFunc: func(e event.TypedUpdateEvent[client.Object]) bool {
-			val, hasAnnotation := e.ObjectOld.GetAnnotations()[watchByAnnotation]
-			if !(hasAnnotation && val == "watchman") {
-				return false
-			}
-
-			if oldDeployment, ok := e.ObjectOld.(*appsv1.Deployment); ok {
-				newDeployment := e.ObjectNew.(*appsv1.Deployment)
-				return hasAnnotation && (reflect.DeepEqual(oldDeployment.Spec, newDeployment.Spec) == false)
-			}
-
-			return false
-		},
+		UpdateFunc: r.filterDeployment,
 	}
 
 	bldr := ctrl.NewControllerManagedBy(mgr)
