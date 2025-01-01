@@ -120,26 +120,26 @@ func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) inter
 	return nil
 }
 
-func HasWatchManAnnotation(a map[string]string) bool {
-	if val, ok := a[watchByAnnotation]; ok && val == "watchman" {
-		return true
-	}
-	return false
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Watch Deployments with watchman annotation
 
 	createFunc := func(e event.TypedCreateEvent[client.Object]) bool {
-		if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
+		annotations := e.Object.GetAnnotations()
+		if utils.HasWatchManAnnotation(annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+			annotations[utils.WatchActionTypeAnnotationKey] = utils.WatchActionTypeCreate
+			e.Object.SetAnnotations(annotations)
 			return true
 		}
 		return false
 	}
 
 	deleteFunc := func(e event.TypedDeleteEvent[client.Object]) bool {
-		if val, ok := e.Object.GetAnnotations()[watchByAnnotation]; ok && val == "watchman" {
+		annotations := e.Object.GetAnnotations()
+
+		if utils.HasWatchManAnnotation(annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+			annotations[utils.WatchActionTypeAnnotationKey] = utils.WatchActionTypeUpdate
+			e.Object.SetAnnotations(annotations)
 			return true
 		}
 		return false
