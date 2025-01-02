@@ -9,7 +9,16 @@ const (
 	WatchActionTypeDelete        = "Delete"
 	WatchActionTypeUpdate        = "Update"
 
-	WatchActorKey = "audit.my.domain/watch-actor"
-
 	WatchManFieldManager = "watch-man-manager"
+
+	WatchUpdateStateKey = "audit.my.domain/watch-update-state"
+	WatchUpdateStateOld = "Old"
+	WatchUpdateStateNew = "New"
 )
+
+func HasWatchManAnnotation(a map[string]string, key string, val string) bool {
+	if kv, ok := a[key]; ok && kv == val {
+		return true
+	}
+	return false
+}

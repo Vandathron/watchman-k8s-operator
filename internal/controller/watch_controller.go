@@ -1,3 +1,45 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+	auditv1alpha1 "github.com/vandathron/watchman/api/v1alpha1"
+	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/utils"
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	audit2 "k8s.io/apiserver/pkg/audit"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+)
+
+var (
+	watchByAnnotation = "audit.my.domain/watch-by"
+	watchActionType   = "audit.my.domain/watch-action"
+)
+
+// WatchReconciler reconciles a Watch object
+type WatchReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+	Audit  audit.Provider
+}
+
+// +kubebuilder:rbac:groups=audit.my.domain,resources=watches,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=audit.my.domain,resources=watches/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=audit.my.domain,resources=watches/finalizers,verbs=update
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;update;patch;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;update
+
 func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	watch := &auditv1alpha1.Watch{}
@@ -13,117 +55,105 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	return ctrl.Result{}, r.reconcileWatchManResource(ctx, watch)
 }
+
 func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch) error {
 	log := log.FromContext(ctx)
-
 	selectors := watch.Spec.Selectors
+	a := audit2.AuditContextFrom(ctx)
+	log.Info("Audit", "Audit", a)
 
 	for _, selector := range selectors {
 		ns := selector.Namespace
 		for _, kind := range selector.Kinds {
 			if kind == "Deployment" {
 				deployments := &appsv1.DeploymentList{}
-				err := r.List(ctx, deployments, client.InNamespace(ns))
-				if err != nil {
-					log.Error(err, "Failed to fetch resource", "Kind", kind)
+				if err := r.List(ctx, deployments, client.InNamespace(ns)); err != nil {
+					log.Error(err, "Failed to fetch deployments")
 					continue
 				}
 
-				if err := r.watchDeployments(ctx, deployments); err != nil {
-					log.Error(err, "Failed to watch deployment")
-					continue
-				}
-
-				log.Info("Watching deployment resources in namespace", "Namespace", ns)
-			} else {
-				log.Error(fmt.Errorf("unsupported resource kind to watch"), "Invalid resource", "Kind", kind)
+				r.watchDeployments(ctx, deployments)
+				continue
 			}
+
+			if kind == "Service" {
+				services := &v1.ServiceList{}
+				err := r.List(ctx, services, client.InNamespace(ns))
+
+				if err != nil {
+					log.Error(err, "Failed to fetch services")
+				}
+				continue
+			}
+
+			log.Error(fmt.Errorf("invalid kind"), "Unsupported kind", "Kind", kind)
 		}
 	}
 
 	return nil
 }
 
-func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) error {
-
+func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) {
 	for _, dep := range deployments.Items {
-		_ = r.watchDeployment(ctx, &dep)
+		r.watchDeployment(ctx, &dep)
 	}
-
-	return nil
 }
 
-func (r *WatchReconciler) watchDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
+func (r *WatchReconciler) watchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
 	log := log.FromContext(ctx)
 
-	if HasWatchManAnnotation(deployment.Annotations) { // no need to update deployment with annotation as it already exists
-		return nil
+	if utils.HasWatchManAnnotation(deployment.Annotations, watchByAnnotation, utils.WatchByAnnotationKV) { // no need to update deployment with annotation as it already exists
+		return
 	}
 
 	latestDeployment := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment)
-
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Failed to get deployment. May have been deleted", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-		return nil // no need to error. Resource may have been deleted
-	} else if err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
 		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-		return err
+		return
 	}
 
-	latestDeployment.Annotations[watchByAnnotation] = "watchman"
+	latestDeployment.Annotations[watchByAnnotation] = utils.WatchByAnnotationKV
 
 	// TODO: Consider patching
-	if err = r.Update(ctx, latestDeployment, &client.UpdateOptions{
-		FieldManager: "watch-man-controller",
+	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
 	}); err != nil {
 		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-		return err
 	}
 
-	return nil
 }
 
-func (r *WatchReconciler) watchServices(ctx context.Context, services *v1.ServiceList) error {
-
+func (r *WatchReconciler) watchServices(ctx context.Context, services *v1.ServiceList) {
 	for _, svc := range services.Items {
-		_ = r.watchService(ctx, &svc)
+		r.watchService(ctx, &svc)
 	}
-
-	return nil
 }
 
-func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) interface{} {
+func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) {
 	log := log.FromContext(ctx)
 	latestSvc := &v1.Service{}
-	if HasWatchManAnnotation(s.Annotations) {
-		return nil // no need to continue
+
+	if utils.HasWatchManAnnotation(s.Annotations, watchByAnnotation, utils.WatchByAnnotationKV) {
+		return // no need to continue
 	}
 
-	if err := r.Get(ctx, types.NamespacedName{Namespace: s.Namespace, Name: s.Name}, latestSvc); err != nil && errors.IsNotFound(err) {
-		log.Info("Failed to get service. May have been deleted", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-		return nil
-	} else if err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: s.Namespace, Name: s.Name}, latestSvc); err != nil {
 		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-		return err
+		return
 	}
 
-	latestSvc.Annotations[watchByAnnotation] = "watchman"
+	latestSvc.Annotations[watchByAnnotation] = utils.WatchByAnnotationKV
 
 	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
-		FieldManager: "watch-man-controller",
+		FieldManager: utils.WatchManFieldManager,
 	}); err != nil {
 		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-		return err
 	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Watch Deployments with watchman annotation
-
 	createFunc := func(e event.TypedCreateEvent[client.Object]) bool {
 		annotations := e.Object.GetAnnotations()
 		if utils.HasWatchManAnnotation(annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
@@ -145,17 +175,12 @@ func (r *WatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return false
 	}
 
-	deployPredicate := predicate.Funcs{
-		CreateFunc: createFunc,
-
-		DeleteFunc: deleteFunc,
-
-		UpdateFunc: r.filterDeployment,
-	}
+	deployPredicate := predicate.Funcs{CreateFunc: createFunc, DeleteFunc: deleteFunc, UpdateFunc: r.filterDeployments}
+	svcPredicate := predicate.Funcs{CreateFunc: createFunc, DeleteFunc: deleteFunc, UpdateFunc: r.filterServices}
 
 	bldr := ctrl.NewControllerManagedBy(mgr)
 	bldr.Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.handleDeployment), builder.WithPredicates(deployPredicate))
-	bldr.Watches(&v1.Service{}, handler.EnqueueRequestsFromMapFunc(r.handleService), builder.WithPredicates(deployPredicate))
+	bldr.Watches(&v1.Service{}, handler.EnqueueRequestsFromMapFunc(r.handleService), builder.WithPredicates(svcPredicate))
 
 	return bldr.For(&auditv1alpha1.Watch{}).
 		Named("watch").
