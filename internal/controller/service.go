@@ -37,8 +37,6 @@ func (r *WatchReconciler) handleService(ctx context.Context, object client.Objec
 
 	switch action {
 	case utils.WatchActionTypeCreate:
-		old := &v1.Service{}
-		r.recordSvcDiff(ctx, old, svc, data)
 		r.Audit.Audit(svc.Name, utils.WatchActionTypeCreate, svc.Namespace, *data)
 
 	case utils.WatchActionTypeUpdate:

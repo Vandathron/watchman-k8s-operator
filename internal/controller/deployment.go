@@ -38,8 +38,6 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 
 	switch action {
 	case utils.WatchActionTypeCreate:
-		old := &appsv1.Deployment{}
-		r.recordDeploymentDiff(ctx, old, deployment, data)
 		r.Audit.Audit("deployment", utils.WatchActionTypeCreate, deployment.Namespace, *data)
 
 	case utils.WatchActionTypeUpdate:
@@ -64,7 +62,6 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 
 	case utils.WatchActionTypeDelete:
 		r.Audit.Audit(deployment.Name, utils.WatchActionTypeDelete, deployment.Namespace, *data)
-
 	default:
 		log.Error(fmt.Errorf("invalid action type"), "Unsupported action type", "Type", action)
 	}
