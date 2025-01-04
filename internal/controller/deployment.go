@@ -6,6 +6,7 @@ import (
 	"github.com/vandathron/watchman/internal/audit"
 	"github.com/vandathron/watchman/internal/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -17,6 +18,35 @@ import (
 var (
 	oldDeployments = map[string]*appsv1.Deployment{}
 )
+
+func (r *WatchReconciler) unWatchDeployments(ctx context.Context, deployment *appsv1.DeploymentList) {
+	for _, dep := range deployment.Items {
+		r.unWatchDeployment(ctx, &dep)
+	}
+}
+
+func (r *WatchReconciler) unWatchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
+	log := log.FromContext(ctx)
+
+	if !utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) { // annotation not found on resource, skip
+		return
+	}
+
+	latestDeployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
+		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return
+	}
+
+	delete(latestDeployment.Annotations, utils.WatchByAnnotationKey)
+
+	// TODO: Consider patching
+	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
+	}); err != nil {
+		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+	}
+}
 
 func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Object) []reconcile.Request {
 	log := log.FromContext(ctx)
