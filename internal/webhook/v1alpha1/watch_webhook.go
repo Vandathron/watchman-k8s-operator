@@ -45,9 +45,9 @@ func (d *WatchCustomDefaulter) Default(ctx context.Context, obj runtime.Object) 
 
 	// selectors with no kinds is assumed to watch all resources in that namespace
 	// add all supported resources if kinds is empty
-	for _, selector := range watch.Spec.Selectors {
+	for i, selector := range watch.Spec.Selectors {
 		if len(selector.Kinds) == 0 {
-			selector.Kinds = []string{utils.SupportedKindService, utils.SupportedKindDeployment}
+			watch.Spec.Selectors[i].Kinds = []string{utils.SupportedKindService, utils.SupportedKindDeployment}
 		}
 	}
 
