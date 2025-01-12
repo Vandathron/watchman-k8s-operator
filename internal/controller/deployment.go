@@ -19,35 +19,6 @@ var (
 	oldDeployments = map[string]*appsv1.Deployment{}
 )
 
-func (r *WatchReconciler) unWatchDeployments(ctx context.Context, deployment *appsv1.DeploymentList) {
-	for _, dep := range deployment.Items {
-		r.unWatchDeployment(ctx, &dep)
-	}
-}
-
-func (r *WatchReconciler) unWatchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
-	log := log.FromContext(ctx)
-
-	if !utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) { // annotation not found on resource, skip
-		return
-	}
-
-	latestDeployment := &appsv1.Deployment{}
-	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
-		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-		return
-	}
-
-	delete(latestDeployment.Annotations, utils.WatchByAnnotationKey)
-
-	// TODO: Consider patching
-	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
-		FieldManager: utils.WatchManFieldManager,
-	}); err != nil {
-		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-	}
-}
-
 func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Object) []reconcile.Request {
 	log := log.FromContext(ctx)
 	deployment, ok := object.(*appsv1.Deployment)
@@ -97,6 +68,67 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 	}
 
 	return nil
+}
+
+func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) {
+	for _, dep := range deployments.Items {
+		r.watchDeployment(ctx, &dep)
+	}
+}
+
+func (r *WatchReconciler) watchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
+	log := log.FromContext(ctx)
+
+	if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) { // no need to update deployment with annotation as it already exists
+		return
+	}
+
+	latestDeployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
+		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return
+	}
+
+	if latestDeployment.Annotations == nil {
+		latestDeployment.Annotations = map[string]string{}
+	}
+	latestDeployment.Annotations[utils.WatchByAnnotationKey] = utils.WatchByAnnotationKV
+
+	// TODO: Consider patching
+	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
+	}); err != nil {
+		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+	}
+}
+
+func (r *WatchReconciler) unWatchDeployments(ctx context.Context, deployment *appsv1.DeploymentList) {
+	for _, dep := range deployment.Items {
+		r.unWatchDeployment(ctx, &dep)
+	}
+}
+
+func (r *WatchReconciler) unWatchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
+	log := log.FromContext(ctx)
+
+	if !utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) { // annotation not found on resource, skip
+		return
+	}
+
+	latestDeployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
+		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+		return
+	}
+
+	delete(latestDeployment.Annotations, utils.WatchByAnnotationKey)
+
+	// TODO: Consider patching
+	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
+	}); err != nil {
+		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
+	}
 }
 
 func (r *WatchReconciler) recordDeploymentDiff(ctx context.Context, old, new *appsv1.Deployment, data *audit.Data) {

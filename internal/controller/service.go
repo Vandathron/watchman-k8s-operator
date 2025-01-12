@@ -18,34 +18,6 @@ var (
 	oldSvcs = map[string]*v1.Service{}
 )
 
-func (r *WatchReconciler) unWatchServices(ctx context.Context, serviceList *v1.ServiceList) {
-	for _, svc := range serviceList.Items {
-		r.unWatchService(ctx, &svc)
-	}
-}
-
-func (r *WatchReconciler) unWatchService(ctx context.Context, svc *v1.Service) {
-	log := log.FromContext(ctx)
-	latestSvc := &v1.Service{}
-
-	if !utils.HasWatchManAnnotation(svc.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
-		return // annotation not found on resource, skip
-	}
-
-	if err := r.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, latestSvc); err != nil {
-		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-		return
-	}
-
-	delete(latestSvc.Annotations, utils.WatchByAnnotationKey) // remove annotation
-
-	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
-		FieldManager: utils.WatchManFieldManager,
-	}); err != nil {
-		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-	}
-}
-
 func (r *WatchReconciler) handleService(ctx context.Context, object client.Object) []reconcile.Request {
 	log := log.FromContext(ctx)
 	svc, ok := object.(*v1.Service)
@@ -97,6 +69,66 @@ func (r *WatchReconciler) handleService(ctx context.Context, object client.Objec
 	}
 
 	return nil
+}
+
+func (r *WatchReconciler) watchServices(ctx context.Context, services *v1.ServiceList) {
+	for _, svc := range services.Items {
+		r.watchService(ctx, &svc)
+	}
+}
+
+func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) {
+	log := log.FromContext(ctx)
+	latestSvc := &v1.Service{}
+
+	if utils.HasWatchManAnnotation(s.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+		return // no need to continue
+	}
+
+	if err := r.Get(ctx, types.NamespacedName{Namespace: s.Namespace, Name: s.Name}, latestSvc); err != nil {
+		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+		return
+	}
+
+	if latestSvc.Annotations == nil {
+		latestSvc.Annotations = map[string]string{}
+	}
+
+	latestSvc.Annotations[utils.WatchByAnnotationKey] = utils.WatchByAnnotationKV
+
+	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
+	}); err != nil {
+		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+	}
+}
+
+func (r *WatchReconciler) unWatchServices(ctx context.Context, serviceList *v1.ServiceList) {
+	for _, svc := range serviceList.Items {
+		r.unWatchService(ctx, &svc)
+	}
+}
+
+func (r *WatchReconciler) unWatchService(ctx context.Context, svc *v1.Service) {
+	log := log.FromContext(ctx)
+	latestSvc := &v1.Service{}
+
+	if !utils.HasWatchManAnnotation(svc.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV) {
+		return // annotation not found on resource, skip
+	}
+
+	if err := r.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, latestSvc); err != nil {
+		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+		return
+	}
+
+	delete(latestSvc.Annotations, utils.WatchByAnnotationKey) // remove annotation
+
+	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
+		FieldManager: utils.WatchManFieldManager,
+	}); err != nil {
+		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
+	}
 }
 
 func (r *WatchReconciler) recordSvcDiff(ctx context.Context, old, new *v1.Service, data *audit.Data) {
