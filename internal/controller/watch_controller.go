@@ -49,18 +49,111 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, r.reconcileWatchManResource(ctx, watch)
+	cm := &v1.ConfigMap{}
+	err = r.Get(ctx, types.NamespacedName{Name: watch.Name, Namespace: watch.Namespace}, cm)
+
+	if err != nil && errors.IsNotFound(err) { // Watch cm deleted or may not have been created
+		cm, err = r.prepareConfigMapForResource(ctx, watch)
+
+		if err != nil {
+			log.Error(err, "Failed to prepare config map for watch resource")
+			return ctrl.Result{}, err
+		}
+
+		if err = r.Create(ctx, cm); err != nil {
+			log.Error(err, "Failed to create watch man config map", "Name", cm.Name, "Namespace", cm.Namespace)
+			// TODO: Track status
+			return ctrl.Result{}, err
+		}
+
+	} else if err != nil {
+		log.Error(err, "Failed to fetch watch man config map", "Name", watch.Name, "Namespace", watch.Namespace)
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileWatchManResource(ctx, watch, utils.ExtractWatchedKindsFromCM(cm.Data)); err != nil {
+		log.Error(err, "Failed to update watch resource")
+		return ctrl.Result{}, err
+	}
+
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+
+	for _, selector := range watch.Spec.Selectors {
+		cm.Data[selector.Namespace] = strings.Join(selector.Kinds, ",")
+	}
+
+	if err = r.Update(ctx, cm); err != nil {
+		log.Error(err, "Failed to update watch config map resource", "Name", cm.Name, "Namespace", cm.Namespace)
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
 }
 
-func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch) error {
+func (r *WatchReconciler) prepareConfigMapForResource(ctx context.Context, watch *auditv1alpha1.Watch) (*v1.ConfigMap, error) {
+
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      watch.Name,
+			Namespace: watch.Namespace,
+		},
+		Data: map[string]string{},
+	}
+
+	if err := ctrl.SetControllerReference(watch, cm, r.Scheme); err != nil {
+		return nil, err
+	}
+	return cm, nil
+}
+
+func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch, watching map[string][]string) error {
 	log := log.FromContext(ctx)
-	selectors := watch.Spec.Selectors
+	toUnWatch := map[string][]string{}
+	toWatch := map[string][]string{}
+
 	a := audit2.AuditContextFrom(ctx)
+	for _, selector := range watch.Spec.Selectors {
+		toWatch[selector.Namespace] = append([]string{}, selector.Kinds...)
+	}
+
 	log.Info("Audit", "Audit", a)
 
-	for _, selector := range selectors {
-		ns := selector.Namespace
-		for _, kind := range selector.Kinds {
+	for ns, kinds := range watching { // loop through resources being watched
+		toWatchKinds, found := toWatch[ns]
+		if !found { // unwatch all resources in namespace ns if ns no longer present in latest crd/toWatch
+			toUnWatch[ns] = watching[ns]
+			continue
+		}
+
+		toUnWatch[ns] = []string{}
+		toWatchKindSet := map[string]struct{}{}
+		for _, kind := range toWatchKinds {
+			toWatchKindSet[kind] = struct{}{}
+		}
+
+		for _, kind := range kinds {
+			if _, ok := toWatchKindSet[kind]; !ok { // compare kinds, unwatch kinds no longer present in latest crd/toWatch in namespace ns
+				toUnWatch[ns] = append(toUnWatch[ns], kind)
+				continue
+			}
+
+			// if kind is present in both kinds to watch and kinds already being watched, remove it from to watch
+			// to avoid making unnecessary api calls
+			//kindIdx := slices.Index(toWatch[ns], kind)
+			//if kindIdx == -1 {
+			//	err := fmt.Errorf("incorrect implementation")
+			//	log.Error(err, "Incorrect implementation. Kind is expected to be present in slice")
+			//	return err
+			//}
+			//
+			//toWatch[ns] = append(toWatch[ns][:kindIdx], toWatch[ns][kindIdx+1:]...)
+		}
+	}
+
+	for ns, kinds := range toWatch {
+		for _, kind := range kinds {
 			if kind == "Deployment" {
 				deployments := &appsv1.DeploymentList{}
 				if err := r.List(ctx, deployments, client.InNamespace(ns)); err != nil {
