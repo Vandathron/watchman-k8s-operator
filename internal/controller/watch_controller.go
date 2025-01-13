@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	audit2 "k8s.io/apiserver/pkg/audit"
@@ -35,6 +36,7 @@ type WatchReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;update;patch;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;update;create
 
 func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -42,8 +44,8 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	err := r.Get(ctx, req.NamespacedName, watch)
 
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Watch resource was not found", "Namespace", req.Namespace, "Name", req.Name)
-		return ctrl.Result{}, nil
+		log.Info("Watch resource deleted", "Namespace", req.Namespace, "Name", req.Name)
+		return ctrl.Result{}, r.cleanUp(ctx)
 	} else if err != nil {
 		log.Error(err, "Fails to get resource", "Namespace", req.Namespace, "Name", req.Name)
 		return ctrl.Result{}, err
@@ -155,13 +157,40 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 	for ns, kinds := range toWatch {
 		for _, kind := range kinds {
 			if kind == "Deployment" {
+				deploymentList := &appsv1.DeploymentList{}
+				if err := r.List(ctx, deploymentList, client.InNamespace(ns)); err != nil || deploymentList.Items == nil {
+					log.Error(err, "Failed to fetch deployments. No deployment perhaps")
+					continue
+				}
+
+				r.watchDeployments(ctx, deploymentList)
+				continue
+			}
+
+			if kind == "Service" {
+				svcList := &v1.ServiceList{}
+				if err := r.List(ctx, svcList, client.InNamespace(ns)); err != nil || svcList.Items == nil {
+					log.Error(err, "Failed to fetch services. No services perhaps")
+					continue
+				}
+				r.watchServices(ctx, svcList)
+				continue
+			}
+
+			log.Error(fmt.Errorf("invalid kind"), "Unsupported kind", "Kind", kind)
+		}
+	}
+
+	for ns, kinds := range toUnWatch {
+		for _, kind := range kinds {
+			if kind == "Deployment" {
 				deployments := &appsv1.DeploymentList{}
 				if err := r.List(ctx, deployments, client.InNamespace(ns)); err != nil {
 					log.Error(err, "Failed to fetch deployments")
 					continue
 				}
 
-				r.watchDeployments(ctx, deployments)
+				r.unWatchDeployments(ctx, deployments)
 				continue
 			}
 
@@ -172,72 +201,13 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 				if err != nil {
 					log.Error(err, "Failed to fetch services")
 				}
+				r.unWatchServices(ctx, services)
 				continue
 			}
-
-			log.Error(fmt.Errorf("invalid kind"), "Unsupported kind", "Kind", kind)
 		}
 	}
 
 	return nil
-}
-
-func (r *WatchReconciler) watchDeployments(ctx context.Context, deployments *appsv1.DeploymentList) {
-	for _, dep := range deployments.Items {
-		r.watchDeployment(ctx, &dep)
-	}
-}
-
-func (r *WatchReconciler) watchDeployment(ctx context.Context, deployment *appsv1.Deployment) {
-	log := log.FromContext(ctx)
-
-	if utils.HasWatchManAnnotation(deployment.Annotations, watchByAnnotation, utils.WatchByAnnotationKV) { // no need to update deployment with annotation as it already exists
-		return
-	}
-
-	latestDeployment := &appsv1.Deployment{}
-	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latestDeployment); err != nil {
-		log.Error(err, "Failed to get deployment", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-		return
-	}
-
-	latestDeployment.Annotations[watchByAnnotation] = utils.WatchByAnnotationKV
-
-	// TODO: Consider patching
-	if err := r.Update(ctx, latestDeployment, &client.UpdateOptions{
-		FieldManager: utils.WatchManFieldManager,
-	}); err != nil {
-		log.Error(err, "Failed to update deployment resource", "Name", latestDeployment.Name, "Namespace", latestDeployment.Namespace)
-	}
-
-}
-
-func (r *WatchReconciler) watchServices(ctx context.Context, services *v1.ServiceList) {
-	for _, svc := range services.Items {
-		r.watchService(ctx, &svc)
-	}
-}
-
-func (r *WatchReconciler) watchService(ctx context.Context, s *v1.Service) {
-	log := log.FromContext(ctx)
-	latestSvc := &v1.Service{}
-
-	if utils.HasWatchManAnnotation(s.Annotations, watchByAnnotation, utils.WatchByAnnotationKV) {
-		return // no need to continue
-	}
-
-	if err := r.Get(ctx, types.NamespacedName{Namespace: s.Namespace, Name: s.Name}, latestSvc); err != nil {
-		log.Error(err, "Failed to get service", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-		return
-	}
-
-	latestSvc.Annotations[watchByAnnotation] = utils.WatchByAnnotationKV
-
-	if err := r.Update(ctx, latestSvc, &client.UpdateOptions{
-		FieldManager: utils.WatchManFieldManager,
-	}); err != nil {
-		log.Error(err, "Failed to update service resource", "Name", latestSvc.Name, "Namespace", latestSvc.Namespace)
-	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
