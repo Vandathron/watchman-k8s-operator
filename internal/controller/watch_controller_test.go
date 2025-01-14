@@ -64,85 +64,68 @@ var _ = Describe("Watch Controller", func() {
 
 			It("should create a config map for the resource", func() {
 				reconciler := &WatchReconciler{
+		When("a new watch resource is created", func() {
+			It("should handle watch resource spec config", func() {
+				r := &WatchReconciler{
 					Client: k8sClient,
 					Scheme: k8sClient.Scheme(),
 					Audit:  &audit.Console{},
 				}
-				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+
+				By("Expecting watch resource config map not present")
+				cm := &v1.ConfigMap{}
+				Expect(errors.IsNotFound(k8sClient.Get(ctx, typeNamespacedName, cm))).To(BeTrue())
+
+				_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating watch resource config map")
 				Eventually(func(g Gomega) {
 					cm := &v1.ConfigMap{}
 					err := k8sClient.Get(ctx, typeNamespacedName, cm)
 					g.Expect(err).NotTo(HaveOccurred())
 					selectorMap := utils.ExtractWatchedKindsFromCM(cm.Data)
-					kinds, ok := selectorMap[watch.Namespace]
+					kinds, ok := selectorMap[watch.Spec.Selectors[0].Namespace]
 					g.Expect(ok).To(BeTrue())
 					g.Expect(len(kinds)).To(Equal(len(watch.Spec.Selectors[0].Kinds)))
 					for _, kind := range watch.Spec.Selectors[0].Kinds {
 						g.Expect(slices.Index(kinds, kind)).ShouldNot(BeEquivalentTo(-1))
 					}
 				}, timeout, interval).Should(Succeed())
-			})
 
-			It("should annotate configured watch kinds in their respective namespaces", func() {
-				reconciler := &WatchReconciler{
-					Client: k8sClient,
-					Scheme: k8sClient.Scheme(),
-					Audit:  &audit.Console{},
-				}
-				ns := "dont-watch"
-				Expect(k8sClient.Create(ctx, makeNamespace(ns))).To(Succeed())
-				// create deployments, svc in 2 namespaces
-				deploy1 := makeDeploymentSpec("deploy-1", ns)
-				svc1 := makeSvcSpec("svc-1", ns)
-				Expect(k8sClient.Create(ctx, deploy1)).To(Succeed())
-				Expect(k8sClient.Create(ctx, svc1)).To(Succeed())
+				By("Creating deployments and services for test purposes")
+				// create deployments, svc in 2 namespaces. Watching kinds in ns1 according to watch resource spec config
+				testCreateDeployments(makeDeploymentSpec("deploy-1", ns1), makeDeploymentSpec("deploy-2", ns2))
+				testCreateServices(makeSvcSpec("svc-1", ns1), makeSvcSpec("svc-2", ns2))
 
-				// ns to watch
-				deploy2 := makeDeploymentSpec("deploy-2", typeNamespacedName.Namespace)
-				svc2 := makeSvcSpec("svc-2", typeNamespacedName.Namespace)
-				Expect(k8sClient.Create(ctx, deploy2)).To(Succeed())
-				Expect(k8sClient.Create(ctx, svc2)).To(Succeed())
-
-				Eventually(func(g Gomega) {
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ns}, &v1.Namespace{})).To(Succeed())
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: deploy1.Name, Namespace: deploy1.Namespace}, &appsv1.Deployment{})).To(Succeed())
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: svc1.Name, Namespace: svc1.Namespace}, &v1.Service{})).To(Succeed())
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: deploy2.Name, Namespace: deploy2.Namespace}, &appsv1.Deployment{})).To(Succeed())
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: svc2.Name, Namespace: svc2.Namespace}, &v1.Service{})).To(Succeed())
-				}, timeout, interval).Should(Succeed())
-
-				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+				By("Annotating all resources in watch resource selectors")
+				_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 				Expect(err).NotTo(HaveOccurred())
-
 				Eventually(func(g Gomega) {
-					// Should not contain annotation
 					dep := &appsv1.Deployment{}
 					svc := &v1.Service{}
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: deploy1.Name, Namespace: deploy1.Namespace}, dep)).To(Succeed())
+
+					By("having ns2 resources not annotated")
+					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "deploy-2", Namespace: ns2}, dep)).To(Succeed())
 					if dep.Annotations != nil {
 						g.Expect(utils.HasWatchManAnnotation(dep.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV)).To(BeFalse())
 					}
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: svc1.Name, Namespace: svc1.Namespace}, svc)).To(Succeed())
+					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "svc-2", Namespace: ns2}, svc)).To(Succeed())
 					if svc.Annotations != nil {
 						g.Expect(utils.HasWatchManAnnotation(svc.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV)).To(BeFalse())
 					}
 
-					deployments := &appsv1.DeploymentList{}
-					if err := reconciler.List(ctx, deployments, client.InNamespace("default")); err != nil {
-						fmt.Println("err")
-					}
-
-					// Should contain annotation
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: svc2.Name, Namespace: svc2.Namespace}, svc)).To(Succeed())
+					By("having ns1 resources annotated with watchman annotation")
+					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "svc-1", Namespace: ns1}, svc)).To(Succeed())
 					g.Expect(svc.Annotations).NotTo(BeNil())
 					g.Expect(utils.HasWatchManAnnotation(svc.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV)).To(BeTrue())
 
-					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: deploy2.Name, Namespace: deploy2.Namespace}, dep)).To(Succeed())
+					g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "deploy-1", Namespace: ns1}, dep)).To(Succeed())
 					g.Expect(dep.Annotations).NotTo(BeNil())
 					g.Expect(utils.HasWatchManAnnotation(dep.Annotations, utils.WatchByAnnotationKey, utils.WatchByAnnotationKV)).To(BeTrue())
 
 				}, timeout, interval).Should(Succeed())
+
 			})
 
 		})
@@ -176,6 +159,7 @@ func testCreateNamespaces(namespaces ...*v1.Namespace) {
 		}, timeout, interval).Should(Succeed())
 	}
 }
+
 func makeDeploymentSpec(name, ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
