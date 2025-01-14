@@ -81,6 +81,12 @@ func (v *WatchCustomValidator) ValidateCreate(ctx context.Context, obj runtime.O
 		return nil, fmt.Errorf("selector can not be empty. Should contain at least a namespace")
 	}
 
+	for _, selector := range watch.Spec.Selectors {
+		if !utils.SupportsAllKinds(selector.Kinds...) {
+			return nil, fmt.Errorf("unsupported kind(s) in namespace %s", selector.Namespace)
+		}
+	}
+
 	return nil, nil
 }
 
@@ -96,6 +102,11 @@ func (v *WatchCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newOb
 		return nil, fmt.Errorf("selector can not be empty. Should contain at least a namespace")
 	}
 
+	for _, selector := range watch.Spec.Selectors {
+		if !utils.SupportsAllKinds(selector.Kinds...) {
+			return nil, fmt.Errorf("unsupported kind(s) in namespace %s", selector.Namespace)
+		}
+	}
 	return nil, nil
 }
 
