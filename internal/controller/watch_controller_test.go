@@ -34,10 +34,16 @@ var _ = Describe("Watch Controller", func() {
 	}
 	ns1 := "ns-1"
 	ns2 := "ns-2"
+	var r *WatchReconciler
 
 	watch := &auditv1alpha1.Watch{}
 	Describe("Reconciling watch resource", Ordered, func() {
 		BeforeAll(func() {
+			r = &WatchReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+				Audit:  &audit.Console{}}
+
 			By("Creating namespaces")
 			testCreateNamespaces(makeNamespace(ns1), makeNamespace(ns2))
 
@@ -65,11 +71,6 @@ var _ = Describe("Watch Controller", func() {
 
 		When("a new watch resource is created", func() {
 			It("should handle watch resource spec config", func() {
-				r := &WatchReconciler{
-					Client: k8sClient,
-					Scheme: k8sClient.Scheme(),
-					Audit:  &audit.Console{},
-				}
 
 				By("Expecting watch resource config map not present")
 				cm := &v1.ConfigMap{}
@@ -162,12 +163,6 @@ var _ = Describe("Watch Controller", func() {
 			})
 
 			It("should update all necessary resources as per updated watch spec config", func() {
-
-				r := &WatchReconciler{
-					Client: k8sClient,
-					Scheme: k8sClient.Scheme(),
-					Audit:  &audit.Console{},
-				}
 				cm := &v1.ConfigMap{}
 
 				_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName}) // reconcile to update config map
