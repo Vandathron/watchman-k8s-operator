@@ -12,58 +12,57 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"slices"
+	"sync"
 	"time"
 )
 
-var _ = Describe("Watch Controller", func() {
+const (
+	resourceName = "test-resource"
+	timeout      = time.Second * 10
+	duration     = time.Second * 10
+	interval     = time.Millisecond * 250
+)
 
-	const (
-		resourceName = "test-resource"
-		timeout      = time.Second * 10
-		duration     = time.Second * 10
-		interval     = time.Millisecond * 250
-	)
+var _ = Describe("Watch Controller", func() {
 	ctx := context.Background()
 	typeNamespacedName := types.NamespacedName{
 		Name:      resourceName,
 		Namespace: "default",
 	}
+	ns1 := "ns-1"
+	ns2 := "ns-2"
 
-	Describe("Reconciling watch resource", func() {
-		Context("A new watch resource is created", func() {
-			watch := &auditv1alpha1.Watch{}
+	watch := &auditv1alpha1.Watch{}
+	Describe("Reconciling watch resource", Ordered, func() {
+		BeforeAll(func() {
+			By("Creating namespaces")
+			testCreateNamespaces(makeNamespace(ns1), makeNamespace(ns2))
 
-			BeforeEach(func() {
-				By("Creating the custom resource for the Kinds Watch")
-				err := k8sClient.Get(ctx, typeNamespacedName, watch)
-				if err != nil && errors.IsNotFound(err) {
-					resource := &auditv1alpha1.Watch{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      typeNamespacedName.Name,
-							Namespace: typeNamespacedName.Namespace,
-						},
-						Spec: auditv1alpha1.WatchSpec{
-							Selectors: []auditv1alpha1.WatchSelector{
-								{Namespace: "default", Kinds: []string{"Deployment", "Service"}},
-							},
-						},
-					}
-					Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-					Eventually(ctx, func(g Gomega) {
-						Expect(k8sClient.Get(ctx, typeNamespacedName, watch)).To(Succeed())
-					}, timeout, interval).Should(Succeed())
-				}
-			})
+			By("Creating watch resource")
+			err := k8sClient.Get(ctx, typeNamespacedName, watch)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+			resource := &auditv1alpha1.Watch{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      typeNamespacedName.Name,
+					Namespace: typeNamespacedName.Namespace,
+				},
+				Spec: auditv1alpha1.WatchSpec{
+					Selectors: []auditv1alpha1.WatchSelector{
+						{Namespace: ns1, Kinds: []string{"Deployment", "Service"}},
+					},
+				},
+			}
 
-			AfterEach(func() {
-				By("Deleting existing custom resource for the Kinds Watch")
-				Expect(k8sClient.Delete(ctx, watch)).To(Succeed())
-			})
+			By("Creating the watch resource")
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			Eventually(ctx, func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, typeNamespacedName, watch)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		})
 
-			It("should create a config map for the resource", func() {
-				reconciler := &WatchReconciler{
 		When("a new watch resource is created", func() {
 			It("should handle watch resource spec config", func() {
 				r := &WatchReconciler{
