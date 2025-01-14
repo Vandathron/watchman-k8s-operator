@@ -150,6 +150,32 @@ var _ = Describe("Watch Controller", func() {
 	})
 })
 
+func testCreateDeployments(deployments ...*appsv1.Deployment) {
+	for _, deployment := range deployments {
+		Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
+		Eventually(ctx, func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: deployment.Namespace, Name: deployment.Name}, &appsv1.Deployment{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+	}
+}
+
+func testCreateServices(services ...*v1.Service) {
+	for _, svc := range services {
+		Expect(k8sClient.Create(ctx, svc)).To(Succeed())
+		Eventually(ctx, func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, &v1.Service{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+	}
+}
+
+func testCreateNamespaces(namespaces ...*v1.Namespace) {
+	for _, ns := range namespaces {
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		Eventually(ctx, func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ns.Name}, &v1.Namespace{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+	}
+}
 func makeDeploymentSpec(name, ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
