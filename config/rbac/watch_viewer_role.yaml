@@ -1,0 +1,23 @@
+# permissions for end users to view watches.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: watchman
+    app.kubernetes.io/managed-by: kustomize
+  name: watch-viewer-role
+rules:
+- apiGroups:
+  - audit.my.domain
+  resources:
+  - watches
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - audit.my.domain
+  resources:
+  - watches/status
+  verbs:
+  - get
