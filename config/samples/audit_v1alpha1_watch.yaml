@@ -1,0 +1,11 @@
+apiVersion: audit.my.domain/v1alpha1
+kind: Watch
+metadata:
+  labels:
+    app.kubernetes.io/name: watchman
+    app.kubernetes.io/managed-by: kustomize
+  name: watch-sample
+spec:
+  selectors:
+    - namespace: default
+      kinds: ["Service", "Deployment"]
