@@ -8,8 +8,9 @@ import (
 type WatchSelector struct {
 	// Namespace is the namespace to watch resource in
 	Namespace string `json:"namespace"`
-	// Resources is the list of resources to watch and audit. e.g (Deployment, Services)
-	Resources []string `json:"resources,omitempty"`
+
+	// Kinds is the list of kind to watch and audit. e.g (Deployment, Services)
+	Kinds []string `json:"kinds,omitempty"`
 }
 
 // WatchSpec defines the desired state of Watch.
@@ -21,6 +22,10 @@ type WatchSpec struct {
 type WatchStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
 // Watch is the Schema for the watches API.
 type Watch struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -29,6 +34,8 @@ type Watch struct {
 	Spec   WatchSpec   `json:"spec,omitempty"`
 	Status WatchStatus `json:"status,omitempty"`
 }
+
+// +kubebuilder:object:root=true
 
 // WatchList contains a list of Watch.
 type WatchList struct {
