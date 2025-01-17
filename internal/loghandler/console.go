@@ -13,7 +13,7 @@ func NewConsole() *Console {
 	return &Console{}
 }
 
-func (c *Console) Audit(resource, action, namespace string, data Data) {
+func (c *Console) Log(resource, action, namespace string, data Data) {
 	message := fmt.Sprintf("Resource::%s, action::%s, namespace::%s, %v", resource, action, namespace, data.fields)
 	log.FromContext(context.Background()).Info(message)
 }
