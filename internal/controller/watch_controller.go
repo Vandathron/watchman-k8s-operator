@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	auditv1alpha1 "github.com/vandathron/watchman/api/v1alpha1"
-	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/loghandler"
 	"github.com/vandathron/watchman/internal/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -27,7 +27,7 @@ import (
 type WatchReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	Audit  audit.Provider
+	Audit  loghandler.Provider
 }
 
 // +kubebuilder:rbac:groups=audit.my.domain,resources=watches,verbs=get;list;watch;create;update;patch;delete

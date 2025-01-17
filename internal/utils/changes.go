@@ -2,13 +2,13 @@ package utils
 
 import (
 	"fmt"
-	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/loghandler"
 	"reflect"
 )
 
 // RecordChanges compares non(struct, func, chan) fields of old and new. Records changes
 // by adding the difference to data.
-func RecordChanges(old, new interface{}, prefix string, data *audit.Data) error {
+func RecordChanges(old, new interface{}, prefix string, data *loghandler.Data) error {
 	oldValue := reflect.ValueOf(old)
 	newValue := reflect.ValueOf(new)
 

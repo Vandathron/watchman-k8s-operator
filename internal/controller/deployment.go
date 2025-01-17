@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/loghandler"
 	"github.com/vandathron/watchman/internal/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,12 +34,12 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 		return nil
 	}
 
-	data := &audit.Data{}
+	data := &loghandler.Data{}
 	data.AddField("Kind", "Deployment")
 
 	switch action {
 	case utils.WatchActionTypeCreate:
-		r.Audit.Audit("deployment", utils.WatchActionTypeCreate, deployment.Namespace, *data)
+		r.Audit.Log("deployment", utils.WatchActionTypeCreate, deployment.Namespace, *data)
 
 	case utils.WatchActionTypeUpdate:
 		if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateOld) {
@@ -55,14 +55,14 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 				return nil
 			}
 			r.recordDeploymentDiff(ctx, oldDeployment, deployment, data)
-			r.Audit.Audit(deployment.Name, utils.WatchActionTypeUpdate, deployment.Namespace, *data)
+			r.Audit.Log(deployment.Name, utils.WatchActionTypeUpdate, deployment.Namespace, *data)
 		} else {
 			log.Error(fmt.Errorf("annotation not found"), fmt.Sprintf("%s not found", utils.WatchUpdateStateKey))
 			return nil
 		}
 
 	case utils.WatchActionTypeDelete:
-		r.Audit.Audit(deployment.Name, utils.WatchActionTypeDelete, deployment.Namespace, *data)
+		r.Audit.Log(deployment.Name, utils.WatchActionTypeDelete, deployment.Namespace, *data)
 	default:
 		log.Error(fmt.Errorf("invalid action type"), "Unsupported action type", "Type", action)
 	}
@@ -131,7 +131,7 @@ func (r *WatchReconciler) unWatchDeployment(ctx context.Context, deployment *app
 	}
 }
 
-func (r *WatchReconciler) recordDeploymentDiff(ctx context.Context, old, new *appsv1.Deployment, data *audit.Data) {
+func (r *WatchReconciler) recordDeploymentDiff(ctx context.Context, old, new *appsv1.Deployment, data *loghandler.Data) {
 	// Compare replicas
 	log := log.FromContext(ctx)
 	if old.Spec.Replicas != new.Spec.Replicas {

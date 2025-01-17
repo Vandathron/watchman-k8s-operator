@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/loghandler"
 	"github.com/vandathron/watchman/internal/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,12 +33,12 @@ func (r *WatchReconciler) handleService(ctx context.Context, object client.Objec
 		return nil
 	}
 
-	data := &audit.Data{}
+	data := &loghandler.Data{}
 	data.AddField("Kind", "Service")
 
 	switch action {
 	case utils.WatchActionTypeCreate:
-		r.Audit.Audit(svc.Name, utils.WatchActionTypeCreate, svc.Namespace, *data)
+		r.Audit.Log(svc.Name, utils.WatchActionTypeCreate, svc.Namespace, *data)
 
 	case utils.WatchActionTypeUpdate:
 		if utils.HasWatchManAnnotation(svc.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateOld) {
@@ -55,14 +55,14 @@ func (r *WatchReconciler) handleService(ctx context.Context, object client.Objec
 				return nil
 			}
 			r.recordSvcDiff(ctx, oldSvc, svc, data)
-			r.Audit.Audit(svc.Name, utils.WatchActionTypeUpdate, svc.Namespace, *data)
+			r.Audit.Log(svc.Name, utils.WatchActionTypeUpdate, svc.Namespace, *data)
 		} else {
 			log.Error(fmt.Errorf("annotation not found"), fmt.Sprintf("%s not found", utils.WatchUpdateStateKey))
 			return nil
 		}
 
 	case utils.WatchActionTypeDelete:
-		r.Audit.Audit(svc.Name, utils.WatchActionTypeDelete, svc.Namespace, *data)
+		r.Audit.Log(svc.Name, utils.WatchActionTypeDelete, svc.Namespace, *data)
 
 	default:
 		log.Error(fmt.Errorf("invalid action type"), "Unsupported action type", "Type", action)
@@ -131,7 +131,7 @@ func (r *WatchReconciler) unWatchService(ctx context.Context, svc *v1.Service) {
 	}
 }
 
-func (r *WatchReconciler) recordSvcDiff(ctx context.Context, old, new *v1.Service, data *audit.Data) {
+func (r *WatchReconciler) recordSvcDiff(ctx context.Context, old, new *v1.Service, data *loghandler.Data) {
 	// Compare replicas
 	log := log.FromContext(ctx)
 
