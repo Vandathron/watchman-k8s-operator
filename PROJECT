@@ -1,0 +1,20 @@
+domain: my.domain
+layout:
+- go.kubebuilder.io/v4
+projectName: watchman
+repo: github.com/vandathron/watchman
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: my.domain
+  group: audit
+  kind: Watch
+  path: github.com/vandathron/watchman/api/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+version: "3"
