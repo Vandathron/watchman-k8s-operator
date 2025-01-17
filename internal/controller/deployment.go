@@ -43,17 +43,19 @@ func (r *WatchReconciler) handleDeployment(ctx context.Context, object client.Ob
 
 	case utils.WatchActionTypeUpdate:
 		if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateOld) {
-			log.Info(" old deployment, should save temporarily")
+			log.Info("old deployment, should save temporarily")
 			oldDeployments[fmt.Sprintf("%s:%s", deployment.Namespace, deployment.Name)] = deployment.DeepCopy()
 			return nil
 		} else if utils.HasWatchManAnnotation(deployment.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateNew) {
 			// find old deployment
+			oldDeployKey := fmt.Sprintf("%s:%s", deployment.Namespace, deployment.Name)
 			log.Info("found new deployment, searching for pair/old")
-			var oldDeployment = oldDeployments[fmt.Sprintf("%s:%s", deployment.Namespace, deployment.Name)]
+			var oldDeployment = oldDeployments[oldDeployKey]
 			if oldDeployment == nil {
 				log.Error(fmt.Errorf("old deployment not found"), "Old deployment not found for new deployment", "Name", deployment.Name, "Namespace", deployment.Namespace)
 				return nil
 			}
+			delete(oldDeployments, oldDeployKey)
 			r.recordDeploymentDiff(ctx, oldDeployment, deployment, data)
 			r.Audit.Log(deployment.Name, utils.WatchActionTypeUpdate, deployment.Namespace, *data)
 		} else {

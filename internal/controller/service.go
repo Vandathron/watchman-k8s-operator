@@ -48,12 +48,14 @@ func (r *WatchReconciler) handleService(ctx context.Context, object client.Objec
 		} else if utils.HasWatchManAnnotation(svc.Annotations, utils.WatchUpdateStateKey, utils.WatchUpdateStateNew) {
 			// find old svc
 			log.Info("found new svc, searching for pair/old")
-			var oldSvc = oldSvcs[fmt.Sprintf("%s:%s", svc.Namespace, svc.Name)]
+			oldSvcKey := fmt.Sprintf("%s:%s", svc.Namespace, svc.Name)
+			var oldSvc = oldSvcs[oldSvcKey]
 
 			if oldSvc == nil {
 				log.Error(fmt.Errorf("old svc not found"), "Old svc not found", "Name", svc.Name, "Namespace", svc.Namespace)
 				return nil
 			}
+			delete(oldSvcs, oldSvcKey)
 			r.recordSvcDiff(ctx, oldSvc, svc, data)
 			r.Audit.Log(svc.Name, utils.WatchActionTypeUpdate, svc.Namespace, *data)
 		} else {
