@@ -78,10 +78,7 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-
+	cm.Data = map[string]string{}
 	for _, selector := range watch.Spec.Selectors {
 		cm.Data[selector.Namespace] = strings.Join(selector.Kinds, ",")
 	}
@@ -91,11 +88,11 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
+	log.Info("reconciliation succeeded")
 	return ctrl.Result{}, nil
 }
 
 func (r *WatchReconciler) prepareConfigMapForResource(ctx context.Context, watch *auditv1alpha1.Watch) (*v1.ConfigMap, error) {
-
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      watch.Name,
@@ -207,6 +204,11 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 		}
 	}
 
+	return nil
+}
+
+func (r *WatchReconciler) cleanUp(ctx context.Context) error {
+	// TODO: remove annotations from resources
 	return nil
 }
 
