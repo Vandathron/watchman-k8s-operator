@@ -87,7 +87,7 @@ var _ = Describe("Watch Controller", func() {
 					selectorMap := utils.ExtractWatchedKindsFromCM(cm.Data)
 					kinds, ok := selectorMap[watch.Spec.Selectors[0].Namespace]
 					g.Expect(ok).To(BeTrue())
-					g.Expect(len(kinds)).To(HaveLen(len(watch.Spec.Selectors[0].Kinds)))
+					g.Expect(kinds).To(HaveLen(len(watch.Spec.Selectors[0].Kinds)))
 					for _, kind := range watch.Spec.Selectors[0].Kinds {
 						g.Expect(slices.Index(kinds, kind)).ShouldNot(BeEquivalentTo(-1))
 					}
@@ -157,7 +157,7 @@ var _ = Describe("Watch Controller", func() {
 					Expect(k8sClient.Update(ctx, watch)).To(Succeed())
 					Eventually(ctx, func(g Gomega) {
 						Expect(k8sClient.Get(ctx, typeNamespacedName, watch)).To(Succeed())
-						Expect(len(watch.Spec.Selectors[0].Kinds)).To(HaveLen(1))
+						Expect(watch.Spec.Selectors[0].Kinds).To(HaveLen(1))
 					}, timeout, interval).Should(Succeed())
 				})
 			})

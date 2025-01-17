@@ -39,9 +39,9 @@ var _ = Describe("Watch Webhook", func() {
 			Expect(defaulter.Default(ctx, watch)).To(Succeed())
 
 			By("checking that the default values are set")
-			Expect(len(watch.Spec.Selectors)).To(HaveLen(2))
+			Expect(watch.Spec.Selectors).To(HaveLen(2))
 			for _, selector := range watch.Spec.Selectors {
-				Expect(len(selector.Kinds)).To(HaveLen(2)) // Supports just 2 kinds yet (Svc, Deploy)
+				Expect(selector.Kinds).To(HaveLen(2)) // Supports just 2 kinds yet (Svc, Deploy)
 				Expect(slices.Index(selector.Kinds, utils.SupportedKindDeployment)).NotTo(Equal(-1))
 				Expect(slices.Index(selector.Kinds, utils.SupportedKindService)).NotTo(Equal(-1))
 			}
