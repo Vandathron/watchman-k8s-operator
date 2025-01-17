@@ -5,7 +5,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	auditv1alpha1 "github.com/vandathron/watchman/api/v1alpha1"
-	"github.com/vandathron/watchman/internal/audit"
+	"github.com/vandathron/watchman/internal/loghandler"
 	"github.com/vandathron/watchman/internal/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -42,7 +42,7 @@ var _ = Describe("Watch Controller", func() {
 			r = &WatchReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
-				Audit:  &audit.Console{}}
+				Audit:  &loghandler.Console{}}
 
 			By("Creating namespaces")
 			testCreateNamespaces(makeNamespace(ns1), makeNamespace(ns2))
