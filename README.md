@@ -1,5 +1,5 @@
-# watchman
-Solely fun project that lets you track and log changes to your resources(Dep & SVC yet) in your cluster.
+# watchman kubernetes operator
+Solely for fun; A kubernetes operator that lets you track and log changes to your resources(Dep & SVC yet) in your cluster.
 
 ## Getting Started
 
