@@ -55,7 +55,7 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	err = r.Get(ctx, types.NamespacedName{Name: watch.Name, Namespace: watch.Namespace}, cm)
 
 	if err != nil && errors.IsNotFound(err) { // Watch cm deleted or may not have been created
-		cm, err = r.prepareConfigMapForResource(ctx, watch)
+		cm, err = r.prepareConfigMapForResource(watch)
 
 		if err != nil {
 			log.Error(err, "Failed to prepare config map for watch resource")
@@ -73,10 +73,7 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileWatchManResource(ctx, watch, utils.ExtractWatchedKindsFromCM(cm.Data)); err != nil {
-		log.Error(err, "Failed to update watch resource")
-		return ctrl.Result{}, err
-	}
+	r.reconcileWatchManResource(ctx, watch, utils.ExtractWatchedKindsFromCM(cm.Data))
 
 	cm.Data = map[string]string{}
 	for _, selector := range watch.Spec.Selectors {
@@ -92,7 +89,7 @@ func (r *WatchReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
-func (r *WatchReconciler) prepareConfigMapForResource(ctx context.Context, watch *auditv1alpha1.Watch) (*v1.ConfigMap, error) {
+func (r *WatchReconciler) prepareConfigMapForResource(watch *auditv1alpha1.Watch) (*v1.ConfigMap, error) {
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      watch.Name,
@@ -107,7 +104,7 @@ func (r *WatchReconciler) prepareConfigMapForResource(ctx context.Context, watch
 	return cm, nil
 }
 
-func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch, watching map[string][]string) error {
+func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *auditv1alpha1.Watch, watching map[string][]string) {
 	log := log.FromContext(ctx)
 	toUnWatch := map[string][]string{}
 	toWatch := map[string][]string{}
@@ -140,14 +137,14 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 
 			// if kind is present in both kinds to watch and kinds already being watched, remove it from to watch
 			// to avoid making unnecessary api calls
-			//kindIdx := slices.Index(toWatch[ns], kind)
-			//if kindIdx == -1 {
+			// kindIdx := slices.Index(toWatch[ns], kind)
+			// if kindIdx == -1 {
 			//	err := fmt.Errorf("incorrect implementation")
 			//	log.Error(err, "Incorrect implementation. Kind is expected to be present in slice")
 			//	return err
-			//}
+			// }
 			//
-			//toWatch[ns] = append(toWatch[ns][:kindIdx], toWatch[ns][kindIdx+1:]...)
+			// toWatch[ns] = append(toWatch[ns][:kindIdx], toWatch[ns][kindIdx+1:]...)
 		}
 	}
 
@@ -203,8 +200,6 @@ func (r *WatchReconciler) reconcileWatchManResource(ctx context.Context, watch *
 			}
 		}
 	}
-
-	return nil
 }
 
 func (r *WatchReconciler) cleanUp(ctx context.Context) error {

@@ -87,7 +87,7 @@ var _ = Describe("Watch Controller", func() {
 					selectorMap := utils.ExtractWatchedKindsFromCM(cm.Data)
 					kinds, ok := selectorMap[watch.Spec.Selectors[0].Namespace]
 					g.Expect(ok).To(BeTrue())
-					g.Expect(len(kinds)).To(Equal(len(watch.Spec.Selectors[0].Kinds)))
+					g.Expect(len(kinds)).To(HaveLen(len(watch.Spec.Selectors[0].Kinds)))
 					for _, kind := range watch.Spec.Selectors[0].Kinds {
 						g.Expect(slices.Index(kinds, kind)).ShouldNot(BeEquivalentTo(-1))
 					}
@@ -157,7 +157,7 @@ var _ = Describe("Watch Controller", func() {
 					Expect(k8sClient.Update(ctx, watch)).To(Succeed())
 					Eventually(ctx, func(g Gomega) {
 						Expect(k8sClient.Get(ctx, typeNamespacedName, watch)).To(Succeed())
-						Expect(len(watch.Spec.Selectors[0].Kinds)).To(Equal(1))
+						Expect(len(watch.Spec.Selectors[0].Kinds)).To(HaveLen(1))
 					}, timeout, interval).Should(Succeed())
 				})
 			})
@@ -166,7 +166,7 @@ var _ = Describe("Watch Controller", func() {
 				cm := &v1.ConfigMap{}
 
 				_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName}) // reconcile to update config map
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				By("Updating watch resource config map")
 				Eventually(ctx, func(g Gomega) {
